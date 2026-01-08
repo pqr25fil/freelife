@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, Input, Card } from '@/components/ui';
@@ -9,8 +10,8 @@ import { slugify } from '@/lib/utils';
 import { LandingPageConfig, DEFAULT_LANDING_CONFIG, Feature } from '@/types';
 import { 
   Rocket, ArrowLeft, Eye, Save, Plus, Trash2,
-  Palette, Type, Image, Zap, Shield, Sparkles, 
-  Users, Globe, Star, Heart, Target, Award
+  Palette, Type, Zap, Shield, Sparkles, 
+  Users, Globe, Star, Heart, Target, Award, Loader2
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -47,12 +48,19 @@ const templatePresets = {
 };
 
 export default function EditorPage() {
+  const { data: session, status } = useSession();
   const router = useRouter();
   const [editId, setEditId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [config, setConfig] = useState<Omit<LandingPageConfig, 'id' | 'createdAt' | 'updatedAt'>>({
+  const [config, setConfig] = useState<Omit<LandingPageConfig, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>({
     ...DEFAULT_LANDING_CONFIG,
   });
+  
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin?callbackUrl=/editor');
+    }
+  }, [status, router]);
   
   useEffect(() => {
     // Check if editing existing page
@@ -127,11 +135,12 @@ export default function EditorPage() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const userId = (session?.user as { id?: string })?.id || session?.user?.email || 'anonymous';
       let page: LandingPageConfig;
       if (editId) {
         page = updateLandingPage(editId, config) as LandingPageConfig;
       } else {
-        page = saveLandingPage(config);
+        page = saveLandingPage(config, userId);
       }
       router.push(`/p/${page.slug}`);
     } catch (error) {
@@ -140,6 +149,20 @@ export default function EditorPage() {
       setIsSaving(false);
     }
   };
+  
+  // Loading state
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+  
+  // Not authenticated
+  if (!session) {
+    return null;
+  }
   
   const getIconComponent = (iconName: string) => {
     const found = iconOptions.find(i => i.name === iconName);

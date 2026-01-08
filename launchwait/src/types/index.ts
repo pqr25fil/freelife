@@ -1,5 +1,19 @@
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  password: string; // hashed
+  plan: 'free' | 'pro' | 'business';
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  subscriptionStatus?: 'active' | 'canceled' | 'past_due' | 'trialing';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface LandingPageConfig {
   id: string;
+  userId: string; // owner of the page
   name: string;
   slug: string;
   template: 'minimal' | 'gradient' | 'dark' | 'startup';
@@ -56,7 +70,7 @@ export interface PricingTier {
   ctaText: string;
 }
 
-export const DEFAULT_LANDING_CONFIG: Omit<LandingPageConfig, 'id' | 'createdAt' | 'updatedAt'> = {
+export const DEFAULT_LANDING_CONFIG: Omit<LandingPageConfig, 'id' | 'userId' | 'createdAt' | 'updatedAt'> = {
   name: 'My Startup',
   slug: 'my-startup',
   template: 'gradient',
@@ -114,3 +128,33 @@ export const TEMPLATES = [
     preview: '/templates/startup.png',
   },
 ] as const;
+
+export const STRIPE_PLANS = {
+  free: {
+    name: 'Free',
+    price: 0,
+    priceId: null,
+    limits: {
+      pages: 1,
+      subscribers: 100,
+    },
+  },
+  pro: {
+    name: 'Pro',
+    price: 9,
+    priceId: process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID || 'price_pro',
+    limits: {
+      pages: -1, // unlimited
+      subscribers: -1, // unlimited
+    },
+  },
+  business: {
+    name: 'Business',
+    price: 29,
+    priceId: process.env.NEXT_PUBLIC_STRIPE_BUSINESS_PRICE_ID || 'price_business',
+    limits: {
+      pages: -1,
+      subscribers: -1,
+    },
+  },
+} as const;

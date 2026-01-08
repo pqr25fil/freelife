@@ -26,17 +26,26 @@ export function getLandingPageBySlug(slug: string): LandingPageConfig | null {
   return pages.find((p) => p.slug === slug) || null;
 }
 
-export function saveLandingPage(page: Omit<LandingPageConfig, 'id' | 'createdAt' | 'updatedAt'>): LandingPageConfig {
+export function saveLandingPage(
+  page: Omit<LandingPageConfig, 'id' | 'userId' | 'createdAt' | 'updatedAt'>,
+  userId: string = 'anonymous'
+): LandingPageConfig {
   const pages = getLandingPages();
   const newPage: LandingPageConfig = {
     ...page,
     id: uuidv4(),
+    userId,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
   pages.push(newPage);
   localStorage.setItem(STORAGE_KEYS.LANDING_PAGES, JSON.stringify(pages));
   return newPage;
+}
+
+export function getLandingPagesByUserId(userId: string): LandingPageConfig[] {
+  const pages = getLandingPages();
+  return pages.filter((p) => p.userId === userId);
 }
 
 export function updateLandingPage(id: string, updates: Partial<LandingPageConfig>): LandingPageConfig | null {

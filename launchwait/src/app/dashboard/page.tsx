@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Card } from '@/components/ui';
 import { 
@@ -14,11 +16,14 @@ import { formatNumber, formatDate, downloadFile, copyToClipboard } from '@/lib/u
 import { LandingPageConfig, Analytics } from '@/types';
 import { 
   Plus, Eye, Edit, Trash2, Download, Copy, Check,
-  BarChart3, Users, MousePointer, TrendingUp,
-  Rocket, ExternalLink, ArrowLeft, Search
+  Users, MousePointer, TrendingUp,
+  Rocket, ExternalLink, ArrowLeft, Search, Settings, Loader2, Crown
 } from 'lucide-react';
 
 export default function DashboardPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  
   const [pages, setPages] = useState<LandingPageConfig[]>([]);
   const [selectedPage, setSelectedPage] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
@@ -27,8 +32,16 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   
   useEffect(() => {
-    loadPages();
-  }, []);
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin?callbackUrl=/dashboard');
+    }
+  }, [status, router]);
+  
+  useEffect(() => {
+    if (status === 'authenticated') {
+      loadPages();
+    }
+  }, [status]);
   
   useEffect(() => {
     if (selectedPage) {
@@ -80,6 +93,21 @@ export default function DashboardPage() {
   );
   
   const selectedPageData = pages.find(p => p.id === selectedPage);
+  const currentPlan = (session?.user as { plan?: string })?.plan || 'free';
+  
+  // Loading state
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+  
+  // Not authenticated
+  if (!session) {
+    return null;
+  }
   
   return (
     <div className="min-h-screen bg-gray-100">
@@ -99,12 +127,31 @@ export default function DashboardPage() {
                 <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
               </div>
             </div>
-            <Link href="/editor">
-              <Button size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                New Page
-              </Button>
-            </Link>
+            <div className="flex items-center space-x-4">
+              {/* Plan Badge */}
+              <Link href="/account">
+                <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
+                  currentPlan === 'free' 
+                    ? 'bg-gray-100 text-gray-600' 
+                    : 'bg-gradient-to-r from-primary-500 to-accent-500 text-white'
+                }`}>
+                  {currentPlan !== 'free' && <Crown className="w-4 h-4 mr-1" />}
+                  <span className="capitalize">{currentPlan}</span>
+                </div>
+              </Link>
+              <Link href="/account">
+                <Button variant="outline" size="sm">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Account
+                </Button>
+              </Link>
+              <Link href="/editor">
+                <Button size="sm">
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Page
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </header>

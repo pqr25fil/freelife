@@ -42,6 +42,7 @@ export default function LandingPage() {
       setConfig({
         ...DEFAULT_LANDING_CONFIG,
         id: 'demo',
+        userId: 'demo',
         slug: slug,
         createdAt: new Date(),
         updatedAt: new Date(),
