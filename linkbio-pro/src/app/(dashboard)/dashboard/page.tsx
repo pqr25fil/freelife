@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
 import {
   Plus,
   Trash2,
@@ -21,6 +22,8 @@ import {
   Sparkles,
   Link2,
   MousePointerClick,
+  CreditCard,
+  Crown,
 } from "lucide-react";
 
 interface Link {
@@ -43,10 +46,17 @@ interface Page {
   _count: { clicks: number };
 }
 
+interface User {
+  id: string;
+  plan: string;
+  stripeSubscriptionId: string | null;
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [page, setPage] = useState<Page | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -97,14 +107,27 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchUser = useCallback(async () => {
+    try {
+      const res = await fetch("/api/user");
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data);
+      }
+    } catch (error) {
+      console.error("Error fetching user:", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login");
     } else if (status === "authenticated") {
       fetchPage();
       fetchAnalytics();
+      fetchUser();
     }
-  }, [status, router, fetchPage, fetchAnalytics]);
+  }, [status, router, fetchPage, fetchAnalytics, fetchUser]);
 
   const handleAddLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,13 +219,15 @@ export default function DashboardPage() {
   }
 
   const themes = [
-    { id: "default", name: "Default", gradient: "from-violet-600 to-indigo-600" },
-    { id: "sunset", name: "Sunset", gradient: "from-orange-500 to-pink-500" },
-    { id: "ocean", name: "Ocean", gradient: "from-cyan-500 to-blue-600" },
-    { id: "forest", name: "Forest", gradient: "from-green-500 to-emerald-600" },
-    { id: "dark", name: "Dark", gradient: "from-gray-800 to-gray-900" },
-    { id: "candy", name: "Candy", gradient: "from-pink-400 to-purple-500" },
+    { id: "default", name: "Default", gradient: "from-violet-600 to-indigo-600", pro: false },
+    { id: "sunset", name: "Sunset", gradient: "from-orange-500 to-pink-500", pro: false },
+    { id: "ocean", name: "Ocean", gradient: "from-cyan-500 to-blue-600", pro: false },
+    { id: "forest", name: "Forest", gradient: "from-green-500 to-emerald-600", pro: true },
+    { id: "dark", name: "Dark", gradient: "from-gray-800 to-gray-900", pro: true },
+    { id: "candy", name: "Candy", gradient: "from-pink-400 to-purple-500", pro: true },
   ];
+
+  const isPro = user?.plan === "pro" || user?.plan === "business";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-indigo-50">
@@ -217,6 +242,14 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Plan Badge */}
+            {user && user.plan !== "free" && (
+              <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-3 py-1.5 rounded-full text-xs font-medium">
+                <Crown className="w-3 h-3" />
+                {user.plan.charAt(0).toUpperCase() + user.plan.slice(1)}
+              </div>
+            )}
+            
             {page && (
               <Button variant="outline" size="sm" onClick={copyToClipboard}>
                 {copied ? (
@@ -234,6 +267,11 @@ export default function DashboardPage() {
             >
               <Eye className="w-4 h-4" />
             </Button>
+            <Link href="/dashboard/billing">
+              <Button variant="ghost" size="sm">
+                <CreditCard className="w-4 h-4" />
+              </Button>
+            </Link>
             <Button
               variant="ghost"
               size="sm"
@@ -246,6 +284,24 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
+        {/* Upgrade Banner for Free Users */}
+        {user && user.plan === "free" && (
+          <div className="mb-6 p-4 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl text-white flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Crown className="w-8 h-8" />
+              <div>
+                <p className="font-bold">Upgrade to Pro</p>
+                <p className="text-sm text-violet-200">Remove branding, custom themes, advanced analytics</p>
+              </div>
+            </div>
+            <Link href="/dashboard/billing">
+              <Button variant="secondary" className="bg-white text-violet-600 hover:bg-violet-50">
+                Upgrade Now — $5/mo
+              </Button>
+            </Link>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <Card>
@@ -436,21 +492,38 @@ export default function DashboardPage() {
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Theme</label>
                     <div className="grid grid-cols-3 gap-3">
-                      {themes.map((theme) => (
-                        <button
-                          key={theme.id}
-                          onClick={() => setEditTheme(theme.id)}
-                          className={`p-3 rounded-xl border-2 transition-all ${
-                            editTheme === theme.id
-                              ? "border-violet-500 ring-2 ring-violet-500/20"
-                              : "border-gray-100 hover:border-gray-200"
-                          }`}
-                        >
-                          <div className={`h-8 rounded-lg bg-gradient-to-r ${theme.gradient} mb-2`} />
-                          <p className="text-xs font-medium">{theme.name}</p>
-                        </button>
-                      ))}
+                      {themes.map((theme) => {
+                        const isLocked = theme.pro && !isPro;
+                        return (
+                          <button
+                            key={theme.id}
+                            onClick={() => !isLocked && setEditTheme(theme.id)}
+                            disabled={isLocked}
+                            className={`p-3 rounded-xl border-2 transition-all relative ${
+                              editTheme === theme.id
+                                ? "border-violet-500 ring-2 ring-violet-500/20"
+                                : "border-gray-100 hover:border-gray-200"
+                            } ${isLocked ? "opacity-60 cursor-not-allowed" : ""}`}
+                          >
+                            {isLocked && (
+                              <div className="absolute top-1 right-1 bg-violet-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium">
+                                PRO
+                              </div>
+                            )}
+                            <div className={`h-8 rounded-lg bg-gradient-to-r ${theme.gradient} mb-2`} />
+                            <p className="text-xs font-medium">{theme.name}</p>
+                          </button>
+                        );
+                      })}
                     </div>
+                    {!isPro && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        <Link href="/dashboard/billing" className="text-violet-600 hover:underline">
+                          Upgrade to Pro
+                        </Link>{" "}
+                        to unlock all themes
+                      </p>
+                    )}
                   </div>
 
                   <Button onClick={handleSavePage} className="w-full" disabled={saving}>
