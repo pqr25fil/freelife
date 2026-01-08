@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import Link from 'next/link'
 import { 
   Sparkles, 
   Twitter, 
@@ -15,7 +17,9 @@ import {
   Lightbulb,
   MessageSquare,
   List,
-  HelpCircle
+  HelpCircle,
+  AlertCircle,
+  Crown
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -44,6 +48,7 @@ const tones = [
 ]
 
 export default function GeneratePage() {
+  const { data: session, status } = useSession()
   const [platform, setPlatform] = useState<Platform>('twitter')
   const [contentType, setContentType] = useState<ContentType>('post')
   const [tone, setTone] = useState<Tone>('professional')
@@ -51,16 +56,30 @@ export default function GeneratePage() {
   const [generatedContent, setGeneratedContent] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [generationsLeft, setGenerationsLeft] = useState(5)
+  const [generationsLeft, setGenerationsLeft] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [limitReached, setLimitReached] = useState(false)
+
+  // Fetch user's remaining generations on mount
+  useEffect(() => {
+    if (session?.user) {
+      // User is logged in, generations will be tracked on server
+      setGenerationsLeft(null) // Will be updated after first generation
+    } else if (status === 'unauthenticated') {
+      // Guest user
+      const stored = localStorage.getItem('guestGenerations')
+      const guestGens = stored ? parseInt(stored) : 0
+      setGenerationsLeft(Math.max(0, 3 - guestGens)) // 3 free generations for guests
+    }
+  }, [session, status])
 
   const handleGenerate = async () => {
     if (!topic.trim()) return
-    if (generationsLeft <= 0) {
-      alert('Вы исчерпали бесплатные генерации. Оформите подписку для продолжения.')
-      return
-    }
-
+    
     setIsLoading(true)
+    setError(null)
+    setLimitReached(false)
+
     try {
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -70,14 +89,29 @@ export default function GeneratePage() {
       
       const data = await response.json()
       
-      if (data.content) {
-        setGeneratedContent(data.content)
-        setGenerationsLeft(prev => prev - 1)
-      } else if (data.error) {
-        setGeneratedContent(`Ошибка: ${data.error}`)
+      if (!response.ok) {
+        if (data.limitReached) {
+          setLimitReached(true)
+        }
+        setError(data.error || 'Произошла ошибка')
+        return
+      }
+
+      setGeneratedContent(data.content)
+      
+      if (data.generationsLeft !== undefined && data.generationsLeft !== null) {
+        setGenerationsLeft(data.generationsLeft)
+      }
+
+      // Track guest generations
+      if (!session?.user) {
+        const stored = localStorage.getItem('guestGenerations')
+        const guestGens = stored ? parseInt(stored) : 0
+        localStorage.setItem('guestGenerations', String(guestGens + 1))
+        setGenerationsLeft(Math.max(0, 2 - guestGens)) // Update remaining
       }
     } catch {
-      setGeneratedContent('Произошла ошибка при генерации. Попробуйте ещё раз.')
+      setError('Произошла ошибка при генерации. Попробуйте ещё раз.')
     } finally {
       setIsLoading(false)
     }
@@ -107,11 +141,50 @@ export default function GeneratePage() {
             <p className="text-xl text-gray-600">
               Создавайте вирусный контент для социальных сетей за секунды
             </p>
-            <div className="mt-4 inline-flex items-center px-4 py-2 bg-primary-50 rounded-full text-primary-700 text-sm">
-              <Sparkles className="w-4 h-4 mr-2" />
-              Осталось генераций: {generationsLeft}/5
+            
+            {/* Status Badge */}
+            <div className="mt-4 flex items-center justify-center gap-4">
+              {session?.user ? (
+                <div className="inline-flex items-center px-4 py-2 bg-primary-50 rounded-full text-primary-700 text-sm">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  {generationsLeft !== null 
+                    ? `Осталось генераций: ${generationsLeft}`
+                    : 'Генерации сохраняются в историю'
+                  }
+                </div>
+              ) : status === 'unauthenticated' ? (
+                <div className="inline-flex items-center px-4 py-2 bg-yellow-50 rounded-full text-yellow-700 text-sm">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Гостевой режим: {generationsLeft ?? 3} генераций
+                  <Link href="/register" className="ml-2 underline font-medium">
+                    Зарегистрируйтесь
+                  </Link>
+                </div>
+              ) : null}
             </div>
           </div>
+
+          {/* Limit Reached Banner */}
+          {limitReached && (
+            <div className="mb-8 p-6 bg-gradient-to-r from-primary-500 to-accent-500 rounded-2xl text-white">
+              <div className="flex items-start gap-4">
+                <Crown className="w-8 h-8 flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold mb-2">Лимит генераций исчерпан</h3>
+                  <p className="text-white/90 mb-4">
+                    Вы достигли лимита генераций на этот месяц. 
+                    Обновите тариф, чтобы продолжить создавать контент.
+                  </p>
+                  <Link
+                    href="/pricing"
+                    className="inline-flex items-center px-6 py-2.5 bg-white text-primary-600 font-semibold rounded-full hover:bg-gray-50 transition-colors"
+                  >
+                    Посмотреть тарифы
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid lg:grid-cols-2 gap-8">
             {/* Left Panel - Input */}
@@ -221,13 +294,21 @@ export default function GeneratePage() {
                 />
               </div>
 
+              {/* Error Message */}
+              {error && !limitReached && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">{error}</span>
+                </div>
+              )}
+
               {/* Generate Button */}
               <button
                 onClick={handleGenerate}
-                disabled={isLoading || !topic.trim()}
+                disabled={isLoading || !topic.trim() || limitReached}
                 className={clsx(
                   'w-full py-4 rounded-xl font-semibold text-white transition-all flex items-center justify-center',
-                  isLoading || !topic.trim()
+                  isLoading || !topic.trim() || limitReached
                     ? 'bg-gray-300 cursor-not-allowed'
                     : 'bg-gradient-to-r from-primary-500 to-accent-500 hover:shadow-lg hover:shadow-primary-500/30'
                 )}
@@ -244,6 +325,16 @@ export default function GeneratePage() {
                   </>
                 )}
               </button>
+
+              {/* Login prompt for guests */}
+              {!session?.user && status === 'unauthenticated' && (
+                <p className="mt-4 text-center text-sm text-gray-500">
+                  <Link href="/login" className="text-primary-600 hover:underline font-medium">
+                    Войдите
+                  </Link>
+                  {' '}чтобы сохранять генерации и получить больше лимитов
+                </p>
+              )}
             </div>
 
             {/* Right Panel - Output */}
@@ -254,8 +345,8 @@ export default function GeneratePage() {
                   <div className="flex gap-2">
                     <button
                       onClick={handleRegenerate}
-                      disabled={isLoading}
-                      className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                      disabled={isLoading || limitReached}
+                      className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors disabled:opacity-50"
                       title="Сгенерировать заново"
                     >
                       <RefreshCw className={clsx('w-5 h-5', isLoading && 'animate-spin')} />
