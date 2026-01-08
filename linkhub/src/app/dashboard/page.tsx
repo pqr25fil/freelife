@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Link2,
   Plus,
@@ -13,17 +13,41 @@ import {
   MousePointer,
   LogOut,
   Palette,
-  User,
   GripVertical,
   Save,
   X,
   Loader2,
   Copy,
   Check,
+  Crown,
+  CreditCard,
+  Settings,
+  Sparkles,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { themes, getTheme } from "@/lib/themes";
 import clsx from "clsx";
+
+// Component to handle search params with Suspense
+function StripeCallback() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  useEffect(() => {
+    const success = searchParams.get("success");
+    const canceled = searchParams.get("canceled");
+
+    if (success === "true") {
+      toast.success("🎉 Добро пожаловать в Pro! Ваша подписка активирована.");
+      router.replace("/dashboard");
+    } else if (canceled === "true") {
+      toast.error("Оплата отменена");
+      router.replace("/dashboard");
+    }
+  }, [searchParams, router]);
+
+  return null;
+}
 
 interface Link {
   id: string;
@@ -43,6 +67,9 @@ interface User {
   avatar?: string;
   theme: string;
   isPro: boolean;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripeCurrentPeriodEnd?: string;
 }
 
 interface Analytics {
@@ -52,12 +79,22 @@ interface Analytics {
 }
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-purple-600" /></div>}>
+      <StripeCallback />
+      <DashboardContent />
+    </Suspense>
+  );
+}
+
+function DashboardContent() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [links, setLinks] = useState<Link[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"links" | "appearance" | "analytics">("links");
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"links" | "appearance" | "analytics" | "subscription">("links");
   const [editingLink, setEditingLink] = useState<string | null>(null);
   const [newLink, setNewLink] = useState({ title: "", url: "" });
   const [showAddForm, setShowAddForm] = useState(false);
@@ -98,6 +135,48 @@ export default function DashboardPage() {
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/");
+  };
+
+  const handleUpgrade = async () => {
+    setUpgradeLoading(true);
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error);
+      }
+
+      // Redirect to Stripe Checkout
+      window.location.href = data.url;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Ошибка при оплате");
+      setUpgradeLoading(false);
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    setUpgradeLoading(true);
+    try {
+      const res = await fetch("/api/stripe/portal", {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error);
+      }
+
+      // Redirect to Stripe Customer Portal
+      window.location.href = data.url;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Ошибка");
+      setUpgradeLoading(false);
+    }
   };
 
   const handleAddLink = async () => {
@@ -208,10 +287,16 @@ export default function DashboardPage() {
               </div>
               <span className="text-xl font-bold text-gray-900">LinkHub</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
+              {user?.isPro && (
+                <div className="hidden sm:flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-full text-sm font-medium">
+                  <Crown className="w-3.5 h-3.5" />
+                  Pro
+                </div>
+              )}
               <button
                 onClick={copyProfileLink}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
               >
                 {copied ? (
                   <Check className="w-4 h-4 text-green-500" />
@@ -223,7 +308,7 @@ export default function DashboardPage() {
               <a
                 href={`/${user?.username}`}
                 target="_blank"
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
               >
                 <ExternalLink className="w-4 h-4" />
                 <span className="hidden sm:inline">Открыть</span>
@@ -245,11 +330,12 @@ export default function DashboardPage() {
           <div className="lg:col-span-2">
             {/* Tabs */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
-              <div className="flex border-b border-gray-200">
+              <div className="flex border-b border-gray-200 overflow-x-auto">
                 {[
                   { id: "links", label: "Ссылки", icon: Link2 },
                   { id: "appearance", label: "Внешний вид", icon: Palette },
                   { id: "analytics", label: "Аналитика", icon: BarChart3 },
+                  { id: "subscription", label: "Подписка", icon: CreditCard },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -573,9 +659,165 @@ export default function DashboardPage() {
                           посетителей, устройства, источники трафика и многое
                           другое.
                         </p>
-                        <button className="bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold hover:bg-white/90 transition-colors">
-                          Получить Pro за $5/мес
+                        <button 
+                          onClick={handleUpgrade}
+                          disabled={upgradeLoading}
+                          className="bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold hover:bg-white/90 transition-colors disabled:opacity-50"
+                        >
+                          {upgradeLoading ? "Загрузка..." : "Получить Pro за $5/мес"}
                         </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Subscription Tab */}
+                {activeTab === "subscription" && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 mb-6">
+                      Управление подпиской
+                    </h2>
+
+                    {user?.isPro ? (
+                      <div className="space-y-6">
+                        {/* Pro Status Card */}
+                        <div className="bg-gradient-to-r from-amber-400 via-orange-500 to-pink-500 rounded-2xl p-6 text-white">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                              <Crown className="w-7 h-7" />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-bold">LinkHub Pro</h3>
+                              <p className="text-white/80">Подписка активна</p>
+                            </div>
+                          </div>
+                          
+                          {user.stripeCurrentPeriodEnd && (
+                            <p className="text-white/80 mb-4">
+                              Следующее списание:{" "}
+                              <span className="font-semibold text-white">
+                                {new Date(user.stripeCurrentPeriodEnd).toLocaleDateString("ru-RU", {
+                                  day: "numeric",
+                                  month: "long",
+                                  year: "numeric",
+                                })}
+                              </span>
+                            </p>
+                          )}
+
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              onClick={handleManageSubscription}
+                              disabled={upgradeLoading}
+                              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+                            >
+                              <Settings className="w-4 h-4" />
+                              {upgradeLoading ? "Загрузка..." : "Управление подпиской"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Pro Features */}
+                        <div className="bg-gray-50 rounded-xl p-6">
+                          <h3 className="font-semibold text-gray-900 mb-4">
+                            Ваши Pro преимущества
+                          </h3>
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            {[
+                              "Безлимитные ссылки",
+                              "Все премиум темы",
+                              "Расширенная аналитика",
+                              "Приоритетная поддержка",
+                              "Без брендинга LinkHub",
+                              "Кастомный домен (скоро)",
+                            ].map((feature, i) => (
+                              <div key={i} className="flex items-center gap-2 text-gray-700">
+                                <Sparkles className="w-4 h-4 text-amber-500" />
+                                {feature}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {/* Upgrade Card */}
+                        <div className="bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 rounded-2xl p-8 text-white text-center">
+                          <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Crown className="w-9 h-9" />
+                          </div>
+                          <h3 className="text-2xl font-bold mb-2">
+                            Обновитесь до Pro
+                          </h3>
+                          <p className="text-white/80 mb-6 max-w-md mx-auto">
+                            Разблокируйте все возможности LinkHub и выделитесь среди конкурентов
+                          </p>
+                          
+                          <div className="text-4xl font-bold mb-6">
+                            $5<span className="text-lg font-normal text-white/80">/месяц</span>
+                          </div>
+
+                          <button
+                            onClick={handleUpgrade}
+                            disabled={upgradeLoading}
+                            className="inline-flex items-center gap-2 bg-white text-purple-600 px-8 py-3 rounded-xl font-semibold hover:bg-white/90 transition-all disabled:opacity-50"
+                          >
+                            {upgradeLoading ? (
+                              <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                Загрузка...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-5 h-5" />
+                                Получить Pro
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Features List */}
+                        <div className="bg-gray-50 rounded-xl p-6">
+                          <h3 className="font-semibold text-gray-900 mb-4">
+                            Что входит в Pro
+                          </h3>
+                          <div className="space-y-3">
+                            {[
+                              { title: "Безлимитные ссылки", desc: "Добавляйте сколько угодно ссылок" },
+                              { title: "Все премиум темы", desc: "Доступ к 9 эксклюзивным темам" },
+                              { title: "Расширенная аналитика", desc: "Детальная статистика посетителей" },
+                              { title: "Без брендинга", desc: "Уберите логотип LinkHub" },
+                              { title: "Приоритетная поддержка", desc: "Быстрые ответы на ваши вопросы" },
+                            ].map((feature, i) => (
+                              <div key={i} className="flex items-start gap-3">
+                                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                  <Check className="w-4 h-4 text-green-600" />
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">{feature.title}</p>
+                                  <p className="text-sm text-gray-600">{feature.desc}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* FAQ */}
+                        <div className="bg-white border border-gray-200 rounded-xl p-6">
+                          <h3 className="font-semibold text-gray-900 mb-4">
+                            Часто задаваемые вопросы
+                          </h3>
+                          <div className="space-y-4 text-sm">
+                            <div>
+                              <p className="font-medium text-gray-900">Как отменить подписку?</p>
+                              <p className="text-gray-600">Вы можете отменить подписку в любой момент через панель управления. Доступ сохранится до конца оплаченного периода.</p>
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">Какие способы оплаты принимаются?</p>
+                              <p className="text-gray-600">Мы принимаем все основные банковские карты через защищённую систему Stripe.</p>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>

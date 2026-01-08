@@ -23,6 +23,9 @@ export async function GET() {
         avatar: true,
         theme: true,
         isPro: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true,
+        stripeCurrentPeriodEnd: true,
         createdAt: true,
       },
     });
